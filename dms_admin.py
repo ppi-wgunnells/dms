@@ -4,15 +4,20 @@ Instance types dms.c5.xlarge but dms.c4.large seems large enough
 This is specific for performance migration from master to casemanager
 Recommend use wizard to get mapping and settings then add json files here.
 UI creation starts the task automatic. But we have more control here and can pick our time
+
+
+additional notes  no stage for master-tbl-auto-consortium
+prod is also different for case manager its not on the same server
 """
 # import datetime
 # import pprint
 import boto3
 import json
 
+stage = 'dev'
+
 session = boto3.session.Session()
 ssm_client = boto3.client('ssm')
-stage = 'dev'
 
 table_map = {
   "rules": [
@@ -62,10 +67,6 @@ with open('dms_settings.json', 'r') as f:
 def get_parameter(client, name, with_decryption=True):
     response = client.get_parameter(Name=name, WithDecryption=with_decryption)
     return response['Parameter']['Value']
-
-
-passwd = get_parameter(ssm_client, f'/apps/aurora_postgres_{stage}/password', with_decryption=True)
-host = get_parameter(ssm_client, f'/apps/aurora_postgres_{stage}/hostname', with_decryption=True)
 
 
 def create_replication(repname):
@@ -200,14 +201,22 @@ def start_rep_task(name_arn, start_type, cdc_start):
                                  CdcStopPosition='string'
     :param name_arn: str() of arn
     :param start_type: str() of start-replication, resume-processing, reload-target
-    :param cdc_start:
+    :param cdc_start: str() of “2018-03-08T12:12:12” so convert datetime to string
     :return:
     """
     client = session.client('dms')
     response = client.start_replication_task(
         ReplicationTaskArn=name_arn,
         StartReplicationTaskType=start_type,
-        CdcStartTime=cdc_start,
+        # CdcStartTime=cdc_start,
+    )
+    return response
+
+
+def stop_rep_task(task_name):
+    client = session.client('dms')
+    response = client.stop_replication_task(
+        ReplicationTaskArn=task_name
     )
     return response
 
@@ -219,21 +228,24 @@ def main(hostname, password, endpoint_name):
 
 
 if __name__ == "__main__":
-    stage = 'prod'
-    endpoint = f"cms-{stage}-master-tbl-auto-consortium-cms"
+    endpoint = f"cms-{stage}-tbl-auto-consortium-cms"
     rep = 'arn:aws:dms:us-west-2:492436075634:rep:PT3HGTVKFCYFFHAVYITCNIHJ32NURVNXMVK3VNA'
-    # main(host, passwd, endpoint)
-    # ### dev
-    src_end_dev = 'arn:aws:dms:us-west-2:492436075634:endpoint:T6BW4BOKHNKF44YFBYO536V7CMB6CJHRN3WDQDQ'
-    dst_end_dev = 'arn:aws:dms:us-west-2:492436075634:endpoint:53S254XSELPT7ENAQM6MGO7KDW6DSEEZHSHEX6Q'
-    print(create_rep_task(src_end_dev, dst_end_dev, rep, 'dev'))
-    # ### stage
-    src_end_stage = 'arn:aws:dms:us-west-2:492436075634:endpoint:X3BJDTTBAWF7ACJYBJGFZ5ROUT3XG4RE6TZXXMA'
-    dst_end_stage = 'arn:aws:dms:us-west-2:492436075634:endpoint:HU5OYFH6CKKROPTNDPMA6LN3DSILAOZI6RGXRWQ'
-    print(create_rep_task(src_end_stage, dst_end_stage, rep, 'stage'))
-    # ### production
-    src_end_prod = 'arn:aws:dms:us-west-2:492436075634:endpoint:ZY4MZT2YXWYGXBAXU73P7PPYDKDW3GTWTUJOS5I'
-    dst_end_prod = 'arn:aws:dms:us-west-2:492436075634:endpoint:E2K4QB3GYA5XVWNB2OLMUYKECCQOOCHQE2NMBLI'
-    print(create_rep_task(src_end_prod, dst_end_prod, rep, 'prod'))
-    # ### delete
-    # print(del_rep_task('arn:aws:dms:us-west-2:492436075634:task:4ZQ6B63V2LKYGRANYXRQ7AZ2VRQV6GBXISMVVLI'))
+    # ### stage does not exist in parameter store its /apps/aurora_postgres/password etc...
+    # ### master
+    # passwd = get_parameter(ssm_client, f'/apps/aurora_postgres_{stage}/password', with_decryption=True)
+    # host = get_parameter(ssm_client, f'/apps/aurora_postgres_{stage}/hostname', with_decryption=True)
+    # ### cms prod
+    passwd = get_parameter(ssm_client, f'/apps/cms/db/cms-{stage}/password', with_decryption=True)
+    host = get_parameter(ssm_client, f'/apps/cms/db/cms-{stage}/host', with_decryption=True)
+    main(host, passwd, endpoint)
+    # # ### dev
+    # src_end_dev = 'arn:aws:dms:us-west-2:492436075634:endpoint:DRHSB5FP7R3ISGUEOZCT6JKMFQDECYPX6VNR6HA'
+    # dst_end_dev = 'arn:aws:dms:us-west-2:492436075634:endpoint:KM56IY35HBAKOTLSZOPOTZA4UJDXSWQ767BTORQ'
+    # print(create_rep_task(src_end_dev, dst_end_dev, rep, 'dev'))
+
+    # ### stop tasks
+    # stop_rep_task('arn:aws:dms:us-west-2:492436075634:task:HT64VESKENTBCP4SLVTWFOI75LJSKMKTUZNRD5A')
+
+    # ### deletes
+    # print(del_rep_task('arn:aws:dms:us-west-2:492436075634:task:HT64VESKENTBCP4SLVTWFOI75LJSKMKTUZNRD5A'))
+    # print(del_endpoint('arn:aws:dms:us-west-2:492436075634:endpoint:Q2NQVASRS7VJTTKDWYNWKMFTYEJITUGIPMW5VJI'))
